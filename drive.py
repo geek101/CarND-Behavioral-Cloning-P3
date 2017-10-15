@@ -15,7 +15,7 @@ from io import BytesIO
 from keras.models import load_model
 import h5py
 from keras import __version__ as keras_version
-
+import cv2
 sio = socketio.Server()
 app = Flask(__name__)
 model = None
@@ -47,6 +47,15 @@ controller = SimplePIController(0.1, 0.002)
 set_speed = 9
 controller.set_desired(set_speed)
 
+clahe = cv2.createCLAHE()
+def _rbg_CLAHE(img_string):
+    image_array = np.asarray(bytearray(base64.b64decode(img_string)), dtype=np.uint8)
+    img_bgr = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    img_lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2Lab)
+    l,a,b = cv2.split(img_lab)
+    l_clahe =  clahe.apply(l)
+    img = cv2.merge((l_clahe, a, b))
+    return img_bgr, cv2.cvtColor(img, cv2.COLOR_Lab2RGB)
 
 @sio.on('telemetry')
 def telemetry(sid, data):
@@ -59,7 +68,8 @@ def telemetry(sid, data):
         speed = data["speed"]
         # The current image from the center camera of the car
         imgString = data["image"]
-        image = Image.open(BytesIO(base64.b64decode(imgString)))
+        #image = Image.open(BytesIO(base64.b64decode(imgString)))
+        img_bgr, image = _rbg_CLAHE(imgString)
         image_array = np.asarray(image)
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
 
@@ -72,7 +82,9 @@ def telemetry(sid, data):
         if args.image_folder != '':
             timestamp = datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')[:-3]
             image_filename = os.path.join(args.image_folder, timestamp)
-            image.save('{}.jpg'.format(image_filename))
+            #image.save('{}.jpg'.format(image_filename))
+            cv2.imwrite('{}.jpg'.format(image_filename), img_bgr)
+            #, cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
     else:
         # NOTE: DON'T EDIT THIS.
         sio.emit('manual', data={}, skip_sid=True)
